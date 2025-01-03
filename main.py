@@ -125,7 +125,7 @@ class ModernMusicPlayer:
                             textvariable=self.url_var,
                             font=('Helvetica', 10),
                             style='TEntry')
-        url_entry.configure(foreground='white', background='#2D2D2D')
+        url_entry.configure(foreground='black', background='#2D2D2D')
         url_entry.pack(side='left', expand=True, fill='x', padx=(0, 10))
         
         # Add Browse button
