@@ -7,7 +7,7 @@ from mutagen.mp3 import MP3
 import yt_dlp
 import threading
 import urllib.parse
-from PIL import Image, ImageTk
+from PIL import Image
 import requests
 from io import BytesIO
 import time
@@ -17,6 +17,11 @@ class ModernMusicPlayer:
         self.root = root
         self.root.title("Modern Music Player")
         self.root.configure(bg="#1E1E1E")
+        
+        # Enable touch events
+        self.root.bind('<Button-1>', self.handle_click)
+        self.root.bind('<ButtonRelease-1>', self.handle_release)
+        self.root.bind('<B1-Motion>', self.handle_drag)
         
         pygame.mixer.init()
         
@@ -28,6 +33,7 @@ class ModernMusicPlayer:
         self.song_position = 0
         self.songs_dir = os.path.join(os.getcwd(), "songs")
         self.last_timer_update = time.time()
+        self.dragging = False
         
         self.current_song_var = tk.StringVar(value="No song playing")
         self.timer_var = tk.StringVar(value="00:00:00")
@@ -44,6 +50,45 @@ class ModernMusicPlayer:
         self.setup_styles()
         self.create_gui()
         self.update_loop()
+
+    def handle_click(self, event):
+        """Handle both mouse clicks and touch events"""
+        widget = event.widget
+        if isinstance(widget, ttk.Scale):
+            self.dragging = True
+            # Calculate value based on click position
+            self.update_scale_value(widget, event)
+
+    def handle_release(self, event):
+        """Handle release of mouse button or touch"""
+        self.dragging = False
+        widget = event.widget
+        if isinstance(widget, ttk.Scale):
+            self.update_scale_value(widget, event)
+
+    def handle_drag(self, event):
+        """Handle drag events for both mouse and touch"""
+        if self.dragging:
+            widget = event.widget
+            if isinstance(widget, ttk.Scale):
+                self.update_scale_value(widget, event)
+
+    def update_scale_value(self, widget, event):
+        """Update scale value based on click/touch position"""
+        if widget == self.progress_bar:
+            width = widget.winfo_width()
+            if width > 0:  # Ensure widget has been drawn
+                click_position = max(0, min(event.x, width))
+                value = (click_position / width) * 100
+                self.progress_var.set(value)
+                self.seek_position(value)
+        elif widget == self.volume_scale:
+            width = widget.winfo_width()
+            if width > 0:
+                click_position = max(0, min(event.x, width))
+                value = (click_position / width) * 100
+                self.volume_scale.set(value)
+                self.set_volume(value)
 
     def setup_styles(self):
         style = ttk.Style()
@@ -120,15 +165,12 @@ class ModernMusicPlayer:
         url_frame = ttk.Frame(self.main_frame, style="Modern.TFrame")
         url_frame.pack(fill='x', pady=(0, 20))
         
-        self.url_var = tk.StringVar()
         url_entry = ttk.Entry(url_frame, 
                             textvariable=self.url_var,
                             font=('Helvetica', 10),
                             style='TEntry')
-        url_entry.configure(foreground='black', background='#2D2D2D')
         url_entry.pack(side='left', expand=True, fill='x', padx=(0, 10))
         
-        # Add Browse button
         browse_button = ttk.Button(url_frame, text="Browse",
                                  command=self.browse_files,
                                  style="Modern.TButton")
@@ -142,7 +184,6 @@ class ModernMusicPlayer:
         timer_frame = ttk.Frame(self.main_frame, style="Modern.TFrame")
         timer_frame.pack(fill='x', pady=20)
         
-        self.timer_var = tk.StringVar(value="00:00:00")
         ttk.Label(timer_frame, textvariable=self.timer_var,
                  style="Timer.TLabel").pack(side='top')
 
@@ -157,18 +198,18 @@ class ModernMusicPlayer:
         progress_frame = ttk.Frame(self.main_frame, style="Modern.TFrame")
         progress_frame.pack(fill='x', pady=20)
         
-        self.current_time_var = tk.StringVar(value="0:00")
-        self.total_time_var = tk.StringVar(value="0:00")
-        
         ttk.Label(progress_frame, textvariable=self.current_time_var, 
                  style="Modern.TLabel").pack(side='left', padx=5)
         
-        self.progress_var = tk.DoubleVar(value=0)
         self.progress_bar = ttk.Scale(progress_frame, from_=0, to=100,
                                     orient='horizontal', variable=self.progress_var,
-                                    style="Horizontal.TScale",
-                                    command=self.seek_position)
+                                    style="Horizontal.TScale")
         self.progress_bar.pack(side='left', fill='x', expand=True)
+        
+        # Bind touch events specifically to the progress bar
+        self.progress_bar.bind('<Button-1>', self.handle_click)
+        self.progress_bar.bind('<ButtonRelease-1>', self.handle_release)
+        self.progress_bar.bind('<B1-Motion>', self.handle_drag)
         
         ttk.Label(progress_frame, textvariable=self.total_time_var, 
                  style="Modern.TLabel").pack(side='left', padx=5)
@@ -193,17 +234,19 @@ class ModernMusicPlayer:
         ttk.Label(volume_frame, text="🔊", style="Modern.TLabel").pack(side='left')
         self.volume_scale = ttk.Scale(volume_frame, from_=0, to=100,
                                     orient='horizontal',
-                                    command=self.set_volume,
                                     style="Horizontal.TScale")
         self.volume_scale.set(50)
         self.volume_scale.pack(side='left', expand=True, fill='x', padx=10)
+        
+        # Bind touch events to the volume scale
+        self.volume_scale.bind('<Button-1>', self.handle_click)
+        self.volume_scale.bind('<ButtonRelease-1>', self.handle_release)
+        self.volume_scale.bind('<B1-Motion>', self.handle_drag)
 
-        self.current_song_var = tk.StringVar(value="No song playing")
         ttk.Label(self.main_frame, textvariable=self.current_song_var,
                  style="Modern.TLabel", wraplength=400).pack(pady=10)
 
     def browse_files(self):
-        """Open file dialog to select MP3 files"""
         files = filedialog.askopenfilenames(
             title="Select MP3 Files",
             filetypes=[("MP3 files", "*.mp3")]
@@ -215,7 +258,6 @@ class ModernMusicPlayer:
                 with open(file, 'rb') as src, open(destination, 'wb') as dst:
                     dst.write(src.read())
             
-            # Reload the playlist
             self.load_local_songs()
 
     def load_youtube_playlist(self):
@@ -302,7 +344,6 @@ class ModernMusicPlayer:
     def set_volume(self, value):
         self.volume = float(value) / 100
         pygame.mixer.music.set_volume(self.volume)
-
     def increase_timer(self):
         self.timer_value += 60
         self.update_timer_display()
